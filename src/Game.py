@@ -4,12 +4,15 @@ from Globals import *
 from Physics import *
 from Player import *
 from pyray import *
+import threading
+import platform
 import psutil
 import sys
 import gc
 import os
 
 heartSprites = []
+operatingSystemName = platform.system()
 currentCursor = MOUSE_CURSOR_ARROW
 newCursor = MOUSE_CURSOR_ARROW
 lastResourceUsageUpdate = 0
@@ -20,6 +23,18 @@ PID = 0
 
 # The ANSI escape codes here are to overwrite the text that pyray prints when it loads
 print(f"\033[F\33[2K\r[== {GAME_NAME} ==]")
+print(f"[INFO:MAIN] >> Running on {operatingSystemName}")
+print(f"[INFO:MAIN] >> Using Raylib {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}")
+
+# Get OpenGL context information from the graphics driver
+oglVersion = rl_get_version()
+
+if oglVersion > 0 and oglVersion < 7:
+    print(f"[INFO:MAIN] >> using OpenGL {GL_VERSION_MAP.get(oglVersion)}")
+
+else:
+    print(f"[WARN:MAIN] >> Graphics driver reported unknown RlGl OpenGL version \"{oglVersion}\" (could be valid, just not defined in Raylib)")
+
 print("[INFO:MAIN] >> Getting process PID...")
 PID = os.getpid()
 
@@ -69,6 +84,7 @@ print("[INFO:MAIN] >> Setting game window init properties...")
 if enableVSync == True:
     print(" ╰───╼ Enabling VSync...")
     set_window_state(FLAG_VSYNC_HINT)
+    set_target_fps(0)
 
 else:
     print(" ╰───╼ Disabling VSync...")
@@ -115,6 +131,9 @@ else:
 print("[INFO:MAIN] >> Loading textures...")
 heartSprites = [load_texture("Assets/Icons/HeartFull.png"), load_texture("Assets/Icons/HeartEmpty.png")]
 
+# Start threads
+threading.Thread(target=PhysicsStep, daemon=True).start()
+
 # Call the garbage collector
 print("[INFO:MAIN] >> Running garbage collector...")
 collectedObjects = gc.collect()
@@ -137,6 +156,10 @@ try:
             newCursor = MOUSE_CURSOR_ARROW
             enableDebug = not enableDebug
             print("[INFO:MAIN] >> Debugging is now " + ("enabled" if enableDebug == True else "disabled"))
+
+        # Toggle physics debug drawing
+        if is_key_pressed(KEY_P):
+            physicsDebugDraw = not physicsDebugDraw
 
         # Debug window handling
         if enableDebug == True:
@@ -222,10 +245,20 @@ try:
                 draw_text(f"CPU usage: {cpuUsage:.2f}%", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 72, 10, RAYWHITE)
                 draw_text(f"MEM usage: {memUsageKB} KB ({memUsageKB / 1024:.2f} MB)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 82, 10, RAYWHITE)
                 draw_text("=== WORLD & PHYSICS ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 102, 10, RAYWHITE)
-                draw_text(f"Player position: ({PlayerPosition[0]:.3f}, {PlayerPosition[1]:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 112, 10, RAYWHITE)
-                draw_text(f"Physics bodies in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
-                draw_text(f"Entities in scene: {len(Entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
-                draw_text(f"Tiles in scene: {BodiesInScene}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
+                draw_text(f"Physics debug draw: {'ON' if physicsDebugDraw == True else 'OFF'}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 112, 10, RAYWHITE)
+                draw_text(f"Player position: ({PlayerPosition[0]:.3f}, {PlayerPosition[1]:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
+                draw_text(f"Physics bodies in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
+                draw_text(f"Entities in scene: {len(Entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
+                draw_text(f"Tiles in scene: {BodiesInScene}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
+                draw_text("=== SYSTEM ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 172, 10, RAYWHITE)
+                draw_text(f"Operating system: {operatingSystemName}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 182, 10, RAYWHITE)
+                draw_text(f"Raylib version: {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 192, 10, RAYWHITE)
+
+                if oglVersion > 0 and oglVersion < 7:
+                    draw_text(f"OpenGL version: {GL_VERSION_MAP.get(oglVersion)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 202, 10, RAYWHITE)
+
+                else:
+                    draw_text(f"OpenGL version: {oglVersion} (undefined by RlGl)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 202, 10, RAYWHITE)
 
             # Draw the debug window's titlebar
             draw_rectangle_lines(int(debugWindowPos.x), int(debugWindowPos.y), DEBUG_WINDOW_SIZE[0], 20, LIGHTGRAY)
@@ -272,7 +305,7 @@ try:
         # Update the title when ready
         if uptime >= lastTitleUpdate:
             lastTitleUpdate = uptime + (TITLE_UPDATE_INTERVAL_MS / 1000)
-            set_window_title(f"{GAME_NAME} ({FPS} FPS)")
+            set_window_title(f"{GAME_NAME} | {WINDOW_WIDTH}x{WINDOW_HEIGHT} | {FPS} FPS")
 
         # Get this program's resource usage when ready, and debugging is enabled
         if enableDebug == True and uptime >= lastResourceUsageUpdate:

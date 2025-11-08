@@ -1,3 +1,12 @@
+GL_VERSION_MAP = {
+    1: "1.1",
+    2: "2.0",
+    3: "3.3",
+    4: "4.3",
+    5: "4.5",
+    6: "4.6",
+}
+
 STATS_FILE = "GameStats.dat"
 GAME_NAME = "AstroDash!"
 RESOURCE_USAGE_UPDATE_INTERVAL_MS = 250
@@ -11,7 +20,7 @@ enableDebug = False
 enableVSync = True
 deltaTime = 0.0
 frameCount = 0
-highScore = 500
+highScore = 0
 livesLeft = LIFE_COUNT
 score = 0
 FPS = 0

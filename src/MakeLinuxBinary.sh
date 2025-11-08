@@ -9,7 +9,10 @@ mkdir -p "$BUILD_DIR"
 nuitka \
     --standalone \
     --onefile \
+    --lto=yes \
     --jobs="$(nproc)" \
+    --python-flag=-O \
     --output-file="$EXE_NAME" \
     --output-dir="$BUILD_DIR" \
+    --assume-yes-for-downloads \
     Game.py
