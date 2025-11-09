@@ -1,4 +1,5 @@
 import pymunk
+import time
 
 GRAVITY = [0, -981]
 PHYSICS_FPS = 120
@@ -19,6 +20,17 @@ def InitPhysics():
 
 def PhysicsStep():
     physicsDelta = 1.0 / PHYSICS_FPS
+    last_time = time.time()
 
     while True:
-        physWorld.step(physicsDelta)
+        current_time = time.time()
+        updateDelta = current_time - last_time
+
+        # Update the physics simulation when needed
+        if updateDelta >= physicsDelta:
+            last_time = current_time
+            physWorld.step(physicsDelta)
+
+        # Sleep when a physics update isn't needed, this reduces CPU usage and allows for higher framerates
+        else:
+            time.sleep(physicsDelta - updateDelta)

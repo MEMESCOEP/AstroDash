@@ -111,6 +111,7 @@ end_drawing()
 
 # Initialize the physics engine
 InitPhysics()
+threading.Thread(target=PhysicsStep, daemon=True).start()
 
 # Read the stats file to get the high score
 if os.path.exists(STATS_FILE) == True:
@@ -130,9 +131,6 @@ else:
 # Load assets
 print("[INFO:MAIN] >> Loading textures...")
 heartSprites = [load_texture("Assets/Icons/HeartFull.png"), load_texture("Assets/Icons/HeartEmpty.png")]
-
-# Start threads
-threading.Thread(target=PhysicsStep, daemon=True).start()
 
 # Call the garbage collector
 print("[INFO:MAIN] >> Running garbage collector...")
