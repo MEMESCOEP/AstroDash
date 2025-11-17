@@ -9,6 +9,8 @@ mkdir -p "$BUILD_DIR"
 nuitka \
     --standalone \
     --onefile \
+    --no-pyi-file \
+    --clang \
     --lto=yes \
     --jobs="$(nproc)" \
     --python-flag=-O \

@@ -2,11 +2,11 @@ from DebugDefinitions import *
 from AssetLoader import *
 from WorldState import *
 from Globals import *
-from Physics import *
 from Player import *
 from pyray import *
 import threading
 import platform
+import Physics
 import psutil
 import time
 import sys
@@ -133,8 +133,12 @@ try:
     audioInitialized = True
 
     # Initialize the physics engine
-    InitPhysics()
-    threading.Thread(target=PhysicsStep, daemon=True).start()
+    Physics.InitPhysics()
+    threading.Thread(target=Physics.BodyRemovalThread, daemon=True).start()
+    threading.Thread(target=Physics.PhysicsStep, daemon=True).start()
+    Physics.CreatePhysicsBody(WINDOW_WIDTH // 2, 20, WINDOW_WIDTH, 30, 10, staticBody=True)
+    Physics.CreatePhysicsBody(10, WINDOW_HEIGHT // 2, 20, WINDOW_HEIGHT, 10, staticBody=True)
+    Physics.CreatePhysicsBody(WINDOW_WIDTH - 10, WINDOW_HEIGHT // 2, 20, WINDOW_HEIGHT, 10, staticBody=True)
 
     # Read the stats file to get the high score
     if os.path.exists(STATS_FILE) == True:
@@ -177,6 +181,11 @@ if initFinished == True:
             mouseDelta = get_mouse_delta()
             mousePos = get_mouse_position()
 
+            if is_key_down(KEY_B):
+                for y in range(3):
+                    for x in range(3):
+                        Physics.CreatePhysicsBody(100 + (x * 30), WINDOW_HEIGHT - (y * 30), 10, 10, 10)
+
             # Toggle debugging by pressing the '`' key
             if is_key_pressed(KEY_GRAVE):
                 if draggingWindow == True:
@@ -189,7 +198,7 @@ if initFinished == True:
 
             # Toggle physics debug drawing
             if is_key_pressed(KEY_P):
-                physicsDebugDraw = not physicsDebugDraw
+                Physics.physicsDebugDraw = not Physics.physicsDebugDraw
 
             # Debug window handling
             if enableDebug == True:
@@ -264,6 +273,10 @@ if initFinished == True:
             # === USER INTERFACE ===
             # NOTE: UI elements should be drawn last so they always draw on top
 
+            # Draw physics bodies if physics debugging is enabled
+            if Physics.physicsDebugDraw == True:
+                Physics.DrawBodies()
+
             # Draw debugging statistics if debugging is enabled
             if enableDebug == True:
                 # Draw the debug data in the window
@@ -278,11 +291,11 @@ if initFinished == True:
                     draw_text(f"CPU usage: {cpuUsage:.2f}%", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 72, 10, RAYWHITE)
                     draw_text(f"MEM usage: {memUsageKB} KB ({memUsageKB / 1024:.2f} MB)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 82, 10, RAYWHITE)
                     draw_text("=== WORLD & PHYSICS ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 102, 10, RAYWHITE)
-                    draw_text(f"Physics debug draw: {'ON' if physicsDebugDraw == True else 'OFF'}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 112, 10, RAYWHITE)
+                    draw_text(f"Physics debug draw: {'ON' if Physics.physicsDebugDraw == True else 'OFF'}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 112, 10, RAYWHITE)
                     draw_text(f"Player position: ({PlayerPosition[0]:.3f}, {PlayerPosition[1]:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
-                    draw_text(f"Physics bodies in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
+                    draw_text(f"Physics bodies in scene: {Physics.GetPhysBodiesInWorld()}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
                     draw_text(f"Entities in scene: {len(Entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
-                    draw_text(f"Tiles in scene: {BodiesInScene}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
+                    draw_text(f"Tiles in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
                     draw_text("=== SYSTEM ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 172, 10, RAYWHITE)
                     draw_text(f"Operating system: {operatingSystemName}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 182, 10, RAYWHITE)
                     draw_text(f"Raylib version: {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 192, 10, RAYWHITE)
@@ -365,7 +378,7 @@ print(f" ╰───╼ Unloading {len(loadedSFX)} sound(s)...")
 for soundEffect in loadedSFX:
     unload_texture(soundEffect)
 
-# Close audio devoce contexts
+# Close audio device contexts
 if audioInitialized == True:
     print("\n[INFO:MAIN] >> Closing audio device(s)...")
     close_audio_device()
