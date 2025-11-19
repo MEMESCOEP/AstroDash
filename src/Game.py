@@ -5,6 +5,7 @@ from Globals import *
 from Player import *
 from pyray import *
 import threading
+import traceback
 import platform
 import Physics
 import psutil
@@ -171,6 +172,7 @@ try:
 
 except Exception as EX:
     print(f"[ERROR:MAIN] >> Error during init: {EX}")
+    traceback.print_exc()
 
 # Start the game loop
 if initFinished == True:
@@ -181,10 +183,10 @@ if initFinished == True:
             mouseDelta = get_mouse_delta()
             mousePos = get_mouse_position()
 
-            if is_key_down(KEY_B):
-                for y in range(3):
-                    for x in range(3):
-                        Physics.CreatePhysicsBody(100 + (x * 30), WINDOW_HEIGHT - (y * 30), 10, 10, 10)
+            if is_key_pressed(KEY_B):
+                for y in range(6):
+                    for x in range(6):
+                        Physics.CreatePhysicsBody(get_mouse_x() + (x * 20), (-get_mouse_y() + WINDOW_HEIGHT) - (y * 20), 20, 20, 10)
 
             # Toggle debugging by pressing the '`' key
             if is_key_pressed(KEY_GRAVE):
@@ -292,19 +294,20 @@ if initFinished == True:
                     draw_text(f"MEM usage: {memUsageKB} KB ({memUsageKB / 1024:.2f} MB)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 82, 10, RAYWHITE)
                     draw_text("=== WORLD & PHYSICS ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 102, 10, RAYWHITE)
                     draw_text(f"Physics debug draw: {'ON' if Physics.physicsDebugDraw == True else 'OFF'}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 112, 10, RAYWHITE)
-                    draw_text(f"Player position: ({PlayerPosition[0]:.3f}, {PlayerPosition[1]:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
-                    draw_text(f"Physics bodies in scene: {Physics.GetPhysBodiesInWorld()}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
-                    draw_text(f"Entities in scene: {len(Entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
-                    draw_text(f"Tiles in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
-                    draw_text("=== SYSTEM ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 172, 10, RAYWHITE)
-                    draw_text(f"Operating system: {operatingSystemName}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 182, 10, RAYWHITE)
-                    draw_text(f"Raylib version: {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 192, 10, RAYWHITE)
+                    draw_text(f"Physics simulation time: {Physics.physicsSimTimeMS:.3f}ms", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
+                    draw_text(f"Player position: ({PlayerPosition[0]:.3f}, {PlayerPosition[1]:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
+                    draw_text(f"Physics bodies in scene: {Physics.GetPhysBodiesInWorld()}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
+                    draw_text(f"Entities in scene: {len(Entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
+                    draw_text(f"Tiles in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 162, 10, RAYWHITE)
+                    draw_text("=== SYSTEM ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 182, 10, RAYWHITE)
+                    draw_text(f"Operating system: {operatingSystemName}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 192, 10, RAYWHITE)
+                    draw_text(f"Raylib version: {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 202, 10, RAYWHITE)
 
                     if oglVersion > 0 and oglVersion < 7:
-                        draw_text(f"OpenGL version: {GL_VERSION_MAP.get(oglVersion)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 202, 10, RAYWHITE)
+                        draw_text(f"OpenGL version: {GL_VERSION_MAP.get(oglVersion)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 212, 10, RAYWHITE)
 
                     else:
-                        draw_text(f"OpenGL version: {oglVersion} (undefined by RlGl)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 202, 10, RAYWHITE)
+                        draw_text(f"OpenGL version: {oglVersion} (undefined by RlGl)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 212, 10, RAYWHITE)
 
                 # Draw the debug window's titlebar
                 draw_rectangle_lines(int(debugWindowPos.x), int(debugWindowPos.y), DEBUG_WINDOW_SIZE[0], 20, LIGHTGRAY)
@@ -361,6 +364,7 @@ if initFinished == True:
 
     except Exception as EX:
         print(f"[ERROR:MAIN] >> Error in window loop: {EX}")
+        traceback.print_exc()
 
 # Clean up
 print("[INFO:MAIN] >> Game loop exited, cleaning up...")

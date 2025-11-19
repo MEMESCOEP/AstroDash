@@ -1,16 +1,14 @@
 from Globals import *
-from pyray import draw_circle_lines, draw_line, ORANGE
+from pyray import *
 from enum import Enum
 import pymunk
 import math
 import time
 import gc
 
-
 class PhysicsBodyShapes(Enum):
     BOX = 1
     SPHERE = 2
-
 
 GRAVITY = [0, -490.5] # Half of earth's gravity
 PHYSICS_ITERATIONS = 5
@@ -19,7 +17,10 @@ PHYSICS_FPS = 120
 bodiesToRemove = []
 bodiesToAdd = []
 physicsDebugDraw = False
+modifyingBodies = False
 worldIsUpdating = False
+physSimEnabled = True
+physicsSimTimeMS = 0.0
 physWorld = None
 
 def InitPhysics():
@@ -87,27 +88,84 @@ def RemoveBody(body):
     physWorld.remove(body, *body.shapes)
 
 def DrawBodies():
-    for body in physWorld.bodies:
-        bodyVertices = GetBodyWorldVertices(body)
-        vertexCount = len(bodyVertices)
+    if modifyingBodies:
+        return
 
-        draw_circle_lines(int(body.position.x), int(WINDOW_HEIGHT - body.position.y), 3, ORANGE)
-        for i in range(vertexCount):
-            startVertex = bodyVertices[i - 1]
-            endVertex = bodyVertices[i]
-            draw_circle_lines(int(endVertex.x), int(WINDOW_HEIGHT - endVertex.y), 2, ORANGE)
-            draw_line(int(startVertex.x), int(WINDOW_HEIGHT - startVertex.y), int(endVertex.x), int(WINDOW_HEIGHT - endVertex.y), ORANGE)
+    rl_begin(RL_LINES)
+    rl_color4ub(ORANGE[0], ORANGE[1], ORANGE[2], ORANGE[3])
+
+    for body in tuple(physWorld.bodies):
+        # draw cross at center
+        cx, cy = body.position.x, WINDOW_HEIGHT - body.position.y
+        s = 3.0
+        rl_vertex2f(cx - s, cy)
+        rl_vertex2f(cx + s, cy)
+        rl_vertex2f(cx, cy - s)
+        rl_vertex2f(cx, cy + s)
+
+        # get first shape
+        shape = next(iter(body.shapes))
+        verts = shape.get_vertices()  # list of Vec2d in local coords
+
+        # compute half-width and half-height from vertices
+        min_x = min(v.x for v in verts)
+        max_x = max(v.x for v in verts)
+        min_y = min(v.y for v in verts)
+        max_y = max(v.y for v in verts)
+        hw = (max_x - min_x) / 2
+        hh = (max_y - min_y) / 2
+
+        # unrolled box corners in local space
+        x0, y0 = -hw, -hh
+        x1, y1 = hw, -hh
+        x2, y2 = hw, hh
+        x3, y3 = -hw, hh
+
+        cos_r = math.cos(body.angle)
+        sin_r = math.sin(body.angle)
+
+        # rotate and translate each corner
+        rx0 = x0 * cos_r - y0 * sin_r + body.position.x
+        ry0 = x0 * sin_r + y0 * cos_r + body.position.y
+        rx1 = x1 * cos_r - y1 * sin_r + body.position.x
+        ry1 = x1 * sin_r + y1 * cos_r + body.position.y
+        rx2 = x2 * cos_r - y2 * sin_r + body.position.x
+        ry2 = x2 * sin_r + y2 * cos_r + body.position.y
+        rx3 = x3 * cos_r - y3 * sin_r + body.position.x
+        ry3 = x3 * sin_r + y3 * cos_r + body.position.y
+
+        # flip Y for screen coords
+        ry0 = WINDOW_HEIGHT - ry0
+        ry1 = WINDOW_HEIGHT - ry1
+        ry2 = WINDOW_HEIGHT - ry2
+        ry3 = WINDOW_HEIGHT - ry3
+
+        # draw box edges
+        rl_vertex2f(rx0, ry0)
+        rl_vertex2f(rx1, ry1)
+        rl_vertex2f(rx1, ry1)
+        rl_vertex2f(rx2, ry2)
+        rl_vertex2f(rx2, ry2)
+        rl_vertex2f(rx3, ry3)
+        rl_vertex2f(rx3, ry3)
+        rl_vertex2f(rx0, ry0)
+
+    rl_end()
 
 def BodyRemovalThread():
     while True:
-        for body in physWorld.bodies:
+        time.sleep(1)
+
+        if modifyingBodies == True:
+            continue
+
+        bodies = tuple(physWorld.bodies)
+        for body in bodies:
             if not IsBodyVisible(body):
                 bodiesToRemove.append(body)
 
-        time.sleep(0.05)
-
 def PhysicsStep():
-    global worldIsUpdating
+    global worldIsUpdating, physicsSimTimeMS
     physicsDelta = 1.0 / PHYSICS_FPS
     last_time = time.time()
 
@@ -117,24 +175,33 @@ def PhysicsStep():
         updateDelta = current_time - last_time
 
         # Update the physics simulation when needed
-        if updateDelta >= physicsDelta:
+        if updateDelta >= physicsDelta and physSimEnabled == True:
+            simStartTime = time.perf_counter()
             worldIsUpdating = True
             last_time = current_time
             physWorld.step(physicsDelta)
             worldIsUpdating = False
 
             for body in bodiesToRemove:
+                modifyingBodies = True
                 physWorld.remove(body, *body.shapes)
 
             for body, shape in bodiesToAdd:
+                modifyingBodies = True
                 physWorld.add(body, shape)
 
 
             if len(bodiesToRemove) > 0 or len(bodiesToAdd) > 0:
+                modifyingBodies = True
                 bodiesToRemove.clear()
                 bodiesToAdd.clear()
-                #gc.collect()
+                gc.collect()
+
+            else:
+                modifyingBodies = False
+
+            physicsSimTimeMS = (time.perf_counter() - simStartTime) * 1000
 
         # Sleep when a physics update isn't needed, this reduces CPU usage and allows for higher framerates
         else:
-            time.sleep(physicsDelta - updateDelta)
+            time.sleep(max(physicsDelta - updateDelta, 0.001))
