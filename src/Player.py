@@ -1,4 +1,9 @@
-player_position = pyray.Vector2(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
+import Globals
+import pyray
+import pymunk
+
+
+player_position = pyray.Vector2(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)
 floor_position = [500,600,200,50] # Placeholder values for a single platform, will for sure be changed later
 
 def movement():
