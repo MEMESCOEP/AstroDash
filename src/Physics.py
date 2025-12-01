@@ -10,10 +10,21 @@ class PhysicsBodyShapes(Enum):
     BOX = 1
     SPHERE = 2
 
-GRAVITY = [0, -490.5] # Half of earth's gravity
+# Values are: (friction, elasticity, density)
+class MaterialTypes(Enum):
+    CONCRETE_WET = (0.30, 0.2, 2.4)
+    CONCRETE_DRY = (1.00, 0.2, 2.4)
+    CONCRETE = (0.62, 0.2, 2.4)
+    GLASS = (0.94, 0.9, 2.5)
+    METAL = (0.50, 0.1, 7.8)
+    STEEL = (0.80, 0.15, 7.85)
+    WOOD = (0.40, 0.3, 0.7)
+    ICE = (0.03, 0.01, 0.92)
+
 PHYSICS_ITERATIONS = 5
 PHYSICS_THREADS = 2
 PHYSICS_FPS = 120
+GRAVITY = -490.5 # Half of earth's gravity
 bodiesToRemove = []
 bodiesToAdd = []
 physicsDebugDraw = False
@@ -27,21 +38,37 @@ def InitPhysics():
     global physWorld
 
     print("[INFO:PHYS] >> Initializing pymunk physics engine...")
-    print(f"[INFO:PHYS] >> Initializing physics space ({PHYSICS_THREADS} threads, {PHYSICS_ITERATIONS} iterations)...")
-    print(f" ╰───╼ Physics space gravity is {GRAVITY[0]} units/sec on the X axis, and {GRAVITY[1]} units/sec on the Y axis\n\r")
-    physWorld = pymunk.Space(threaded=True)
+
+    assert PHYSICS_ITERATIONS > 0, "Physics iterations must be at least 1"
+    assert PHYSICS_THREADS > 0, "Physics threads must be at least 1"
+
+    print(f"[INFO:PHYS] >> Initializing physics space...")
+    print(f" ├───╼ Physics space gravity is {GRAVITY} u/s")
+    print(f" ├───╼ Physics simulation will do {PHYSICS_ITERATIONS} iterations")
+    print(f" ╰───╼ Physics simulation will use {PHYSICS_THREADS} thread(s)\n\r")
+    physWorld = pymunk.Space(threaded=(PHYSICS_THREADS > 1))
     physWorld.iterations = PHYSICS_ITERATIONS
-    physWorld.gravity = GRAVITY
     physWorld.threads = PHYSICS_THREADS
+    physWorld.gravity = [0, GRAVITY]
 
     print("[INFO:PHYS] >> Physics space initialized")
 
-def CreatePhysicsBody(posX, posY, width, height, mass, friction=0.5, staticBody=False):
+def CreatePhysicsBody(posX, posY, width, height, material, mass=None, friction=None, density=None, elasticity=None, staticBody=False):
     newBody = pymunk.Body(body_type=pymunk.Body.STATIC if staticBody == True else pymunk.Body.DYNAMIC)
     newBody.position = posX, posY
     bodyPoly = pymunk.Poly.create_box(newBody, size=(width, height))
-    bodyPoly.friction = 0.5
-    bodyPoly.mass = mass
+
+    # Use the material properties with overrides
+    materialFriction, materialElasticity, materialDensity = material.value
+    bodyPoly.elasticity = elasticity if elasticity is not None else materialElasticity
+    bodyPoly.friction = friction if friction is not None else materialFriction
+    bodyPoly.density = density if density is not None else materialDensity
+
+    # Optional mass override
+    # NOTE: This must happen after the density assignment because setting the density can overwrite the mass
+    if mass is not None:
+        bodyPoly.mass = mass
+
     bodiesToAdd.append((newBody, bodyPoly))
 
 def GetPhysBodiesInWorld():
@@ -91,23 +118,37 @@ def DrawBodies():
     if modifyingBodies:
         return
 
+    bodiesTuple = tuple(physWorld.bodies)
+
+    if len(bodiesTuple) <= 0:
+        return
+
+    crossSize = 4.0
     rl_begin(RL_LINES)
     rl_color4ub(ORANGE[0], ORANGE[1], ORANGE[2], ORANGE[3])
 
-    for body in tuple(physWorld.bodies):
-        # draw cross at center
+    for body in bodiesTuple:
+        # Make sure the body exists and has a shape before we try to draw it
+        if body.space is None:
+            continue
+
+        shapes = list(body.shapes)
+
+        if not shapes:
+            continue
+
+        # Draw a cross to mark the center of the body
         cx, cy = body.position.x, WINDOW_HEIGHT - body.position.y
-        s = 3.0
-        rl_vertex2f(cx - s, cy)
-        rl_vertex2f(cx + s, cy)
-        rl_vertex2f(cx, cy - s)
-        rl_vertex2f(cx, cy + s)
+        rl_vertex2f(cx - crossSize, cy)
+        rl_vertex2f(cx + crossSize, cy)
+        rl_vertex2f(cx, cy - crossSize)
+        rl_vertex2f(cx, cy + crossSize)
 
-        # get first shape
-        shape = next(iter(body.shapes))
-        verts = shape.get_vertices()  # list of Vec2d in local coords
+        # Get the first shape attached to the body
+        shape = shapes[0]
+        verts = shape.get_vertices()
 
-        # compute half-width and half-height from vertices
+        # Compute half-width and half-height from vertices
         min_x = min(v.x for v in verts)
         max_x = max(v.x for v in verts)
         min_y = min(v.y for v in verts)
@@ -115,7 +156,7 @@ def DrawBodies():
         hw = (max_x - min_x) / 2
         hh = (max_y - min_y) / 2
 
-        # unrolled box corners in local space
+        # Unroll the box corners in local space
         x0, y0 = -hw, -hh
         x1, y1 = hw, -hh
         x2, y2 = hw, hh
@@ -124,7 +165,7 @@ def DrawBodies():
         cos_r = math.cos(body.angle)
         sin_r = math.sin(body.angle)
 
-        # rotate and translate each corner
+        # Rotate and translate each corner to convert from local space to world space
         rx0 = x0 * cos_r - y0 * sin_r + body.position.x
         ry0 = x0 * sin_r + y0 * cos_r + body.position.y
         rx1 = x1 * cos_r - y1 * sin_r + body.position.x
@@ -134,13 +175,13 @@ def DrawBodies():
         rx3 = x3 * cos_r - y3 * sin_r + body.position.x
         ry3 = x3 * sin_r + y3 * cos_r + body.position.y
 
-        # flip Y for screen coords
+        # Flip the Y coordinate to convert to raylib coords
         ry0 = WINDOW_HEIGHT - ry0
         ry1 = WINDOW_HEIGHT - ry1
         ry2 = WINDOW_HEIGHT - ry2
         ry3 = WINDOW_HEIGHT - ry3
 
-        # draw box edges
+        # Draw the box edges
         rl_vertex2f(rx0, ry0)
         rl_vertex2f(rx1, ry1)
         rl_vertex2f(rx1, ry1)

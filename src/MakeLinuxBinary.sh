@@ -6,7 +6,7 @@ EXE_NAME="Game.bin"
 
 echo ">>> Creating Linux executable \"$BUILD_DIR$EXE_NAME\"..."
 mkdir -p "$BUILD_DIR"
-nuitka \
+python3 -m nuitka \
     --standalone \
     --onefile \
     --no-pyi-file \
@@ -17,4 +17,5 @@ nuitka \
     --output-file="$EXE_NAME" \
     --output-dir="$BUILD_DIR" \
     --assume-yes-for-downloads \
+    "$@" \
     Game.py

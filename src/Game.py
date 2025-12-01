@@ -1,20 +1,24 @@
 from DebugDefinitions import *
-from AssetLoader import *
 from WorldState import *
 from Globals import *
-from Player import *
 from pyray import *
+import AssetManager
+import MessageBox
 import threading
 import traceback
 import platform
 import Physics
+import Player
 import psutil
+import random
 import time
 import sys
 import gc
 import os
 
+STAR_COLOR = Color(255, 244, 243, 255)
 heartSprites = []
+stars = []
 operatingSystemName = platform.system()
 currentCursor = MOUSE_CURSOR_ARROW
 newCursor = MOUSE_CURSOR_ARROW
@@ -24,6 +28,7 @@ initFinished = False
 lastResourceUsageUpdate = 0
 lastScoreUpdate = 0
 lastTitleUpdate = 0
+lastStarUpdate = 0
 uptime = 0
 PID = 0
 
@@ -71,8 +76,13 @@ try:
                     enableVSync = False
 
                 case "--Debug":
-                    print(" ╰───╼ Debug mode will be enabled...")
+                    print(" ╰───╼ Debug mode will be enabled")
                     enableDebug = True
+
+                case "--No-Load-Errors":
+                    print(" ╰───╼ No errors will be shown if assets fail to load...")
+                    AssetManager.ShowLoadErrors = False
+
 
                 case _:
                     print(f" ╰───╼ Invalid CMD arg \"{arg}\"")
@@ -137,9 +147,6 @@ try:
     Physics.InitPhysics()
     threading.Thread(target=Physics.BodyRemovalThread, daemon=True).start()
     threading.Thread(target=Physics.PhysicsStep, daemon=True).start()
-    Physics.CreatePhysicsBody(WINDOW_WIDTH // 2, 20, WINDOW_WIDTH, 30, 10, staticBody=True)
-    Physics.CreatePhysicsBody(10, WINDOW_HEIGHT // 2, 20, WINDOW_HEIGHT, 10, staticBody=True)
-    Physics.CreatePhysicsBody(WINDOW_WIDTH - 10, WINDOW_HEIGHT // 2, 20, WINDOW_HEIGHT, 10, staticBody=True)
 
     # Read the stats file to get the high score
     if os.path.exists(STATS_FILE) == True:
@@ -162,7 +169,15 @@ try:
 
     # Load assets
     print("[INFO:MAIN] >> Loading textures...")
-    heartSprites = [LoadTexture("Assets/Icons/HeartFull.png"), LoadTexture("Assets/Icons/HeartEmpty.png")]
+    heartSprites = [AssetManager.LoadTexture("Assets/Icons/HeartFull.png"), AssetManager.LoadTexture("Assets/Icons/HeartEmpty.png")]
+
+    # Place the stars in the background
+    print(f"[INFO:MAIN] >> Placing {STAR_COUNT} star(s)...")
+    for i in range(STAR_COUNT):
+        starVector = Vector2(random.randint(2, WINDOW_WIDTH), random.randint(2, WINDOW_HEIGHT))
+        starAngle = random.uniform(0, 360)
+        starScale = random.uniform(STAR_SCALE_RANGE[0], STAR_SCALE_RANGE[1])
+        stars.append([starVector, starScale, starAngle])
 
     # Call the garbage collector
     print("[INFO:MAIN] >> Running garbage collector...")
@@ -173,20 +188,16 @@ try:
 except Exception as EX:
     print(f"[ERROR:MAIN] >> Error during init: {EX}")
     traceback.print_exc()
+    MessageBox.showMessage(MessageBox.MessageTypes.ERROR, "Error during initialization", f"An error occurred during initialization, see the console for more information.\n\n{EX}")
 
 # Start the game loop
 if initFinished == True:
     print("[INFO:MAIN] >> Init finished, starting game loop...")
     try:
         while window_should_close() == False:
-            # Get user input before begin_drawing
+            # Get user input before drawing the frame
             mouseDelta = get_mouse_delta()
             mousePos = get_mouse_position()
-
-            if is_key_pressed(KEY_B):
-                for y in range(6):
-                    for x in range(6):
-                        Physics.CreatePhysicsBody(get_mouse_x() + (x * 20), (-get_mouse_y() + WINDOW_HEIGHT) - (y * 20), 20, 20, 10)
 
             # Toggle debugging by pressing the '`' key
             if is_key_pressed(KEY_GRAVE):
@@ -257,20 +268,17 @@ if initFinished == True:
                 set_mouse_cursor(newCursor)
                 currentCursor = newCursor
 
-            if is_key_pressed(KEY_SPACE):
-                if is_key_down(KEY_LEFT_SHIFT):
-                    if livesLeft < LIFE_COUNT:
-                        livesLeft += 1
-
-                else:
-                    livesLeft -= 1
-
             # Update the music streams so they keep playing
-            UpdateMusicStreams()
+            AssetManager.UpdateMusicStreams()
 
             # Start the frame
             begin_drawing()
             clear_background(WINDOW_BG_COLOR)
+
+            # === GRAPHICS ===
+            # Draw the stars
+            for star in stars:
+                draw_poly(star[0], 3, star[1], star[2], STAR_COLOR)
 
             # === USER INTERFACE ===
             # NOTE: UI elements should be drawn last so they always draw on top
@@ -295,7 +303,7 @@ if initFinished == True:
                     draw_text("=== WORLD & PHYSICS ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 102, 10, RAYWHITE)
                     draw_text(f"Physics debug draw: {'ON' if Physics.physicsDebugDraw == True else 'OFF'}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 112, 10, RAYWHITE)
                     draw_text(f"Physics simulation time: {Physics.physicsSimTimeMS:.3f}ms", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
-                    draw_text(f"Player position: ({PlayerPosition[0]:.3f}, {PlayerPosition[1]:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
+                    draw_text(f"Player position: ({Player.player_position.x:.3f}, {Player.player_position.y:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
                     draw_text(f"Physics bodies in scene: {Physics.GetPhysBodiesInWorld()}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
                     draw_text(f"Entities in scene: {len(Entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
                     draw_text(f"Tiles in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 162, 10, RAYWHITE)
@@ -342,14 +350,26 @@ if initFinished == True:
             uptime += deltaTime
             FPS = get_fps()
 
-            # Update the high score
-            if score > highScore:
-                highScore = score
+            # Move stars and check if any of them are out of bounds
+            if uptime >= lastStarUpdate:
+                lastStarUpdate = uptime + (STAR_UPDATE_INTERVAL_MS / 1000)
 
-            # Update the score when ready
+                for star in stars:
+                    star[0].x -= 1
+
+                    if star[0].x < -8:
+                        star[0].x = WINDOW_WIDTH + random.randint(8, 64)
+                        star[0].y = random.randint(0, WINDOW_HEIGHT)
+                        star[1] = random.uniform(STAR_SCALE_RANGE[0], STAR_SCALE_RANGE[1])
+                        star[2] = random.uniform(0, 360)
+
+            # Update the score and high score when ready
             if uptime >= lastScoreUpdate:
                 lastScoreUpdate = uptime + (SCORE_INCREASE_INTERVAL_MS / 1000)
                 score += 1
+
+                if score > highScore:
+                    highScore = score
 
             # Update the title when ready
             if uptime >= lastTitleUpdate:
@@ -365,30 +385,18 @@ if initFinished == True:
     except Exception as EX:
         print(f"[ERROR:MAIN] >> Error in window loop: {EX}")
         traceback.print_exc()
+        MessageBox.showMessage(MessageBox.MessageTypes.ERROR, "Error in window loop", f"An error occurred in the window loop, see the console for more information.\n\n{EX}")
 
 # Clean up
 print("[INFO:MAIN] >> Game loop exited, cleaning up...")
 
 # Unload assets
-print(f" ├───╼ Unloading {len(loadedTextures)} textures(s)...")
-for texture in loadedTextures:
-    unload_texture(texture)
-
-print(f" ├───╼ Unloading {len(loadedMusic)} music file(s)...")
-for musicFile in loadedMusic:
-    unload_texture(musicFile)
-
-print(f" ╰───╼ Unloading {len(loadedSFX)} sound(s)...")
-for soundEffect in loadedSFX:
-    unload_texture(soundEffect)
+AssetManager.UnloadAllAssets()
 
 # Close audio device contexts
 if audioInitialized == True:
-    print("\n[INFO:MAIN] >> Closing audio device(s)...")
+    print("[INFO:MAIN] >> Closing audio device(s)...")
     close_audio_device()
-
-else:
-    print()
 
 # Close the game window
 if windowInitialized == True:
@@ -404,6 +412,8 @@ if initFinished == True:
 
     except Exception as EX:
         print(f"[ERROR:MAIN] >> Failed to write to \"{STATS_FILE}\": {EX}")
+        traceback.print_exc()
+        MessageBox.showMessage(MessageBox.MessageTypes.ERROR, "Failed to save high score", f"An error occurred while saving your high score, see the console for more information.\n\n{EX}")
 
 # Call the garbage collector
 print("[INFO:MAIN] >> Running final garbage collection...")
