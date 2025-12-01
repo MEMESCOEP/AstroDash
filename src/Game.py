@@ -1,5 +1,4 @@
 from DebugDefinitions import *
-from WorldState import *
 from Globals import *
 from pyray import *
 import AssetManager
@@ -18,7 +17,9 @@ import os
 
 STAR_COLOR = Color(255, 244, 243, 255)
 heartSprites = []
+entities = []
 stars = []
+tiles = []
 operatingSystemName = platform.system()
 currentCursor = MOUSE_CURSOR_ARROW
 newCursor = MOUSE_CURSOR_ARROW
@@ -271,9 +272,14 @@ if initFinished == True:
             # Update the music streams so they keep playing
             AssetManager.UpdateMusicStreams()
 
+            # Handle player movement
+            Player.movement()
+
             # Start the frame
             begin_drawing()
             clear_background(WINDOW_BG_COLOR)
+
+
 
             # === GRAPHICS ===
             # Draw the stars
@@ -305,8 +311,8 @@ if initFinished == True:
                     draw_text(f"Physics simulation time: {Physics.physicsSimTimeMS:.3f}ms", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
                     draw_text(f"Player position: ({Player.player_position.x:.3f}, {Player.player_position.y:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
                     draw_text(f"Physics bodies in scene: {Physics.GetPhysBodiesInWorld()}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
-                    draw_text(f"Entities in scene: {len(Entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
-                    draw_text(f"Tiles in scene: {len(Tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 162, 10, RAYWHITE)
+                    draw_text(f"Entities in scene: {len(entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
+                    draw_text(f"Tiles in scene: {len(tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 162, 10, RAYWHITE)
                     draw_text("=== SYSTEM ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 182, 10, RAYWHITE)
                     draw_text(f"Operating system: {operatingSystemName}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 192, 10, RAYWHITE)
                     draw_text(f"Raylib version: {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 202, 10, RAYWHITE)
