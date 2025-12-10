@@ -1,35 +1,133 @@
-from Globals import *
-import pyray
+import Globals
+import Physics
 import pymunk
+import pyray
 
+PLAYER_SPAWN_POS = (30, 60)
+PLAYER_RIGHT_KEY = pyray.KeyboardKey.KEY_D
+PLAYER_LEFT_KEY = pyray.KeyboardKey.KEY_A
+PLAYER_HEIGHT = 40
+PLAYER_WIDTH = 20
+moveSpeed = 150
+jumpForce = 250
+playerBody = None
+wallRight = False
+wallLeft = False
+grounded = False
 
-player_position = pyray.Vector2(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2)
-floor_position = [500,600,200,50] # Placeholder values for a single platform
-bullet_position = [900,300] # Placeholder values for a single obstacle
-IS_ALIVE = True
+def HandleGroundCollisions(arbiter, space, data):
+    global grounded
 
-def movement():
-    if pyray.is_key_down(pyray.KeyboardKey.KEY_RIGHT): # Left and Right Inputs
-        player_position.x += 5
+    if arbiter.shapes[1].collision_type != Physics.CollisionLayers.GROUND.value:
+        return True
 
-    if pyray.is_key_down(pyray.KeyboardKey.KEY_LEFT):
-        player_position.x -= 5
-        
-    if pyray.check_collision_circle_rec(player_position, 50, floor_position) == True: # Check to see is the player is grounded or not
-        if pyray.is_key_pressed(pyray.KeyboardKey.KEY_SPACE):
-            player_position.y -= 150
+    grounded = True
+    return True
+
+def EndGroundCollisions(arbiter, space, data):
+    global grounded
+
+    if arbiter.shapes[1].collision_type != Physics.CollisionLayers.GROUND.value:
+        return True
+
+    grounded = False
+    return True
+
+def HandleWallCollisions(arbiter, space, data):
+    global wallRight, wallLeft
+
+    player = arbiter.shapes[0].body
+    vx, vy = player.velocity
+    wallLeft = vx < 0
+    wallRight = vx > 0
+
+    return True
+
+def EndWallCollisions(arbiter, space, data):
+    global wallRight, wallLeft
+
+    wallLeft = False
+    wallRight = False
+
+    return True
+
+def init():
+    global playerBody
+
+    # Create the player body and the wall & ground sensors
+    playerBody = Physics.CreatePhysicsBody(PLAYER_SPAWN_POS[0], PLAYER_SPAWN_POS[1], PLAYER_WIDTH, PLAYER_HEIGHT, Physics.MaterialTypes.CONCRETE_DRY, instantAdd=True)
+    groundSensor = pymunk.Segment(
+        playerBody,
+        ((-PLAYER_WIDTH / 2) + 2, (-PLAYER_HEIGHT / 2) - 2),
+        ((PLAYER_WIDTH / 2) - 2, (-PLAYER_HEIGHT / 2) - 2),
+        1
+    )
+
+    rightWallSensor = pymunk.Segment(
+        playerBody,
+        ((PLAYER_WIDTH / 2) + 4, (-PLAYER_HEIGHT / 2) + 8),
+        ((PLAYER_WIDTH / 2) + 4, (PLAYER_HEIGHT / 2) - 2),
+        1
+    )
+
+    leftWallSensor = pymunk.Segment(
+        playerBody,
+        ((-PLAYER_WIDTH / 2) - 4, (-PLAYER_HEIGHT / 2) + 8),
+        ((-PLAYER_WIDTH / 2) - 4, (PLAYER_HEIGHT / 2) - 2),
+        1
+    )
+
+    # Configure the sensors
+    groundSensor.sensor = True
+    rightWallSensor.sensor = True
+    leftWallSensor.sensor = True
+    groundSensor.collision_type = Physics.CollisionLayers.GROUND.value
+    rightWallSensor.collision_type = Physics.CollisionLayers.WALL.value
+    leftWallSensor.collision_type = Physics.CollisionLayers.WALL.value
+
+    # Add the sensors to the physics world
+    Physics.physWorld.add(rightWallSensor)
+    Physics.physWorld.add(leftWallSensor)
+    Physics.physWorld.add(groundSensor)
+
+    # Add the collision handlers for the ground and wall sensors
+    groundHandler = Physics.physWorld.add_collision_handler(Physics.CollisionLayers.DEFAULT.value, Physics.CollisionLayers.GROUND.value)
+    wallHandler = Physics.physWorld.add_collision_handler(Physics.CollisionLayers.WALL.value, Physics.CollisionLayers.GROUND.value)
+
+    # Set collision callbacks
+    groundHandler.begin = HandleGroundCollisions
+    wallHandler.begin = HandleWallCollisions
+    groundHandler.separate = EndGroundCollisions
+    wallHandler.separate = EndWallCollisions
+
+def movement(delta):
+    vx, vy = playerBody.velocity
+
+    if Globals.livesLeft > 0:
+        moveRight = pyray.is_key_down(PLAYER_RIGHT_KEY) and wallRight == False
+        moveLeft = pyray.is_key_down(PLAYER_LEFT_KEY) and wallLeft == False
+
+        if moveRight == True and moveLeft == False:
+            vx = moveSpeed
+
+        elif moveRight == False and moveLeft == True:
+            vx = -moveSpeed
 
         else:
-            player_position.y == 0
+            vx = Globals.Lerp(vx, 0, 10 * delta)
 
-    else:
-        player_position.y += 2.5 # Not integrated with Pymunk gravity yet, will be updated in the near future
+        if grounded == True and pyray.is_key_pressed(pyray.KeyboardKey.KEY_SPACE):
+                vy = jumpForce
+
+    if playerBody.position.x < PLAYER_WIDTH:
+        vx = max(vx, 0)
+
+    playerBody.velocity = (vx, vy)
+    playerBody.moment = float('inf') # Stops body rotation
 
 def health():
-    if pyray.check_collision_circles(player_position, 50, bullet_position, 50) == True: # For simplicity sake in this stage, platforms are currently drawn as rectangles and obstacles are drawn as circles
-        LIFE_COUNT -= 1
-
-    if LIFE_COUNT <= 0:
-        IS_ALIVE = False
+    if playerBody.position.y < -PLAYER_HEIGHT:
+        Globals.livesLeft = 0
+        playerBody.velocity = (0.0, 0.0)
 
 # The player object is currently set as a circle with the position of player_position and a radius of 50, just to be clear

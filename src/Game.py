@@ -1,11 +1,11 @@
 from DebugDefinitions import *
-from Globals import *
 from pyray import *
 import AssetManager
 import MessageBox
 import threading
 import traceback
 import platform
+import Globals
 import Physics
 import Player
 import psutil
@@ -16,10 +16,12 @@ import gc
 import os
 
 STAR_COLOR = Color(255, 244, 243, 255)
+PLATFORM_SPAWN_AHEAD = 350
 heartSprites = []
 entities = []
 stars = []
 tiles = []
+camera = Camera2D()
 operatingSystemName = platform.system()
 currentCursor = MOUSE_CURSOR_ARROW
 newCursor = MOUSE_CURSOR_ARROW
@@ -29,13 +31,17 @@ initFinished = False
 lastResourceUsageUpdate = 0
 lastScoreUpdate = 0
 lastTitleUpdate = 0
+currentMonitor = 0
 lastStarUpdate = 0
 uptime = 0
 PID = 0
+lastPlatformY = 50
+nextPlatformCreateX = 150
+lastPlatformWidth = 0
 
 # The ANSI escape codes here are to overwrite the text that pyray prints when it loads
 try:
-    print(f"\033[F\33[2K\r[== {GAME_NAME} ==]")
+    print(f"\033[F\33[2K\r[== {Globals.GAME_NAME} ==]")
     print(f"[INFO:MAIN] >> Running on {operatingSystemName}")
     print(f"[INFO:MAIN] >> Using Raylib {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}")
 
@@ -43,7 +49,7 @@ try:
     oglVersion = rl_get_version()
 
     if oglVersion > 0 and oglVersion < 7:
-        print(f"[INFO:MAIN] >> using OpenGL {GL_VERSION_MAP.get(oglVersion)}")
+        print(f"[INFO:MAIN] >> using OpenGL {Globals.GL_VERSION_MAP.get(oglVersion)}")
 
     else:
         print(f"[WARN:MAIN] >> Graphics driver reported unknown RlGl OpenGL version \"{oglVersion}\" (could be valid, just not defined in Raylib)")
@@ -59,9 +65,14 @@ try:
 
     if argCount > 0:
         print(f"[INFO:MAIN] >> Parsing {len(sys.argv) - 1} CMD arg(s)...")
+        skipNextArg = False
         argIndex = 0
 
         for arg in sys.argv[1:]:
+            if skipNextArg == True:
+                skipNextArg = False
+                continue
+
             argIndex += 1
 
             if argIndex > 1:
@@ -70,15 +81,23 @@ try:
             match arg:
                 case "--Fullscreen":
                     print(" ╰───╼ Fullscreen mode will be enabled")
-                    fullscreenMode = True
+                    Globals.fullscreenMode = True
+
+                case "--MonitorIndex":
+                    assert (argIndex + 1) < (len(sys.argv)), "No parameter specified for monitor index!"
+                    assert sys.argv[argIndex + 1].isnumeric(), "Parameter specified for monitor index must be an integer!"
+                    currentMonitor = int(sys.argv[argIndex + 1])
+                    skipNextArg = True
+                    argIndex += 1
+                    print(f" ╰───╼ Monitor {currentMonitor} will be used")
 
                 case "--No-VSync":
                     print(" ╰───╼ VSync will be disabled")
-                    enableVSync = False
+                    Globals.enableVSync = False
 
                 case "--Debug":
                     print(" ╰───╼ Debug mode will be enabled")
-                    enableDebug = True
+                    Globals.enableDebug = True
 
                 case "--No-Load-Errors":
                     print(" ╰───╼ No errors will be shown if assets fail to load...")
@@ -99,7 +118,7 @@ try:
 
     # Initialize the game window
     print("[INFO:MAIN] >> Setting game window init properties...")
-    if enableVSync == True:
+    if Globals.enableVSync == True:
         print(" ╰───╼ Enabling VSync...")
         set_window_state(FLAG_VSYNC_HINT)
         set_target_fps(0)
@@ -109,27 +128,34 @@ try:
         clear_window_state(FLAG_VSYNC_HINT)
 
     print(f"\n[INFO:MAIN] >> Creating game window ({WINDOW_WIDTH}x{WINDOW_HEIGHT})...")
-    init_window(WINDOW_WIDTH, WINDOW_HEIGHT, GAME_NAME)
+    init_window(Globals.WINDOW_WIDTH, Globals.WINDOW_HEIGHT, Globals.GAME_NAME)
     windowInitialized = True
 
     print("[INFO:MAIN] >> Setting game window post-init properties...")
     # If fullscreen is enabled, update the window width and get_render_height
     # NOTE: This can only be done after the raylib window opens AND before fullscreen is enabled, which is why it happens here
-    if fullscreenMode == True:
-        currentMonitor = get_current_monitor()
-        WINDOW_WIDTH = get_monitor_width(currentMonitor)
-        WINDOW_HEIGHT = get_monitor_height(currentMonitor)
-        debugWindowPos = Vector2(WINDOW_WIDTH - DEBUG_WINDOW_SIZE[0] - 16, 16)
+    if Globals.fullscreenMode == True:
+        Globals.WINDOW_WIDTH = get_monitor_width(currentMonitor)
+        Globals.WINDOW_HEIGHT = get_monitor_height(currentMonitor)
+        debugWindowPos = Vector2(Globals.WINDOW_WIDTH - DEBUG_WINDOW_SIZE[0] - 16, 16)
         toggle_fullscreen()
 
     # Display a loading splash screen
     begin_drawing()
     clear_background(BLACK)
-    draw_text("Loading...", WINDOW_WIDTH - measure_text("Loading...", 20) - 8, WINDOW_HEIGHT - 28, 20, RAYWHITE)
+    draw_text("Loading...", Globals.WINDOW_WIDTH - measure_text("Loading...", 20) - 8, Globals.WINDOW_HEIGHT - 28, 20, RAYWHITE)
     end_drawing()
 
+    print("[INFO:MAIN] >> Getting current monitor...")
+    monitorIndex = get_current_monitor()
+
+    if monitorIndex != currentMonitor:
+        set_window_monitor(currentMonitor)
+
+    print(f" ╰───╼ Current monitor is \"{get_monitor_name(currentMonitor)}\" (index={currentMonitor})...")
+
     # Initialize audio device(s)
-    print("[INFO:MAIN] >> Initializing audio device(s)...")
+    print("\n[INFO:MAIN] >> Initializing audio device(s)...")
     init_audio_device()
 
     # Wait up to 5 seconds for the audio device to be ready
@@ -146,23 +172,26 @@ try:
 
     # Initialize the physics engine
     Physics.InitPhysics()
-    threading.Thread(target=Physics.BodyRemovalThread, daemon=True).start()
     threading.Thread(target=Physics.PhysicsStep, daemon=True).start()
 
+    # Create physics bodies
+    Physics.CreatePhysicsBody(125, 20, 250, 30, Physics.MaterialTypes.CONCRETE_DRY, staticBody=True, collisionType=Physics.CollisionLayers.GROUND.value)
+    Player.init()
+
     # Read the stats file to get the high score
-    if os.path.exists(STATS_FILE) == True:
-        print(f"[INFO:MAIN] >> Reading game stats file \"{STATS_FILE}\"...")
+    if os.path.exists(Globals.STATS_FILE) == True:
+        print(f"[INFO:MAIN] >> Reading game stats file \"{Globals.STATS_FILE}\"...")
         try:
-            with open(STATS_FILE, 'r') as StatsFile:
+            with open(Globals.STATS_FILE, 'r') as StatsFile:
                 for line in StatsFile.readlines():
                     if line.startswith("HI=") == True:
-                        highScore = int(line[3:])
+                        Globals.highScore = int(line[3:])
 
         except Exception as EX:
-            print(f"[ERROR:MAIN] >> Failed to read \"{STATS_FILE}\": {EX}")
+            print(f"[ERROR:MAIN] >> Failed to read \"{Globals.STATS_FILE}\": {EX}")
 
     else:
-        print(f"[INFO:MAIN] >> Game stats file \"{STATS_FILE}\" doesn't exist")
+        print(f"[INFO:MAIN] >> Game stats file \"{Globals.STATS_FILE}\" doesn't exist")
 
     # Disable escape to exit
     print("[INFO:MAIN] >> Disabling escape to exit...")
@@ -173,12 +202,19 @@ try:
     heartSprites = [AssetManager.LoadTexture("Assets/Icons/HeartFull.png"), AssetManager.LoadTexture("Assets/Icons/HeartEmpty.png")]
 
     # Place the stars in the background
-    print(f"[INFO:MAIN] >> Placing {STAR_COUNT} star(s)...")
-    for i in range(STAR_COUNT):
-        starVector = Vector2(random.randint(2, WINDOW_WIDTH), random.randint(2, WINDOW_HEIGHT))
+    print(f"[INFO:MAIN] >> Placing {Globals.STAR_COUNT} star(s)...")
+    for i in range(Globals.STAR_COUNT):
+        starVector = Vector2(random.randint(2, Globals.WINDOW_WIDTH), random.randint(2, Globals.WINDOW_HEIGHT))
         starAngle = random.uniform(0, 360)
-        starScale = random.uniform(STAR_SCALE_RANGE[0], STAR_SCALE_RANGE[1])
+        starScale = random.uniform(Globals.STAR_SCALE_RANGE[0], Globals.STAR_SCALE_RANGE[1])
         stars.append([starVector, starScale, starAngle])
+
+    # Configure the camera
+    print("[INFO:MAIN] >> Configuring the camera...")
+    camera.offset = Vector2(0, 0)
+    camera.target = Vector2(0, 0)
+    camera.rotation = 0.0
+    camera.zoom = 1.0
 
     # Call the garbage collector
     print("[INFO:MAIN] >> Running garbage collector...")
@@ -193,9 +229,11 @@ except Exception as EX:
 
 # Start the game loop
 if initFinished == True:
+
     print("[INFO:MAIN] >> Init finished, starting game loop...")
     try:
         while window_should_close() == False:
+            # === USER INTERACTION ===
             # Get user input before drawing the frame
             mouseDelta = get_mouse_delta()
             mousePos = get_mouse_position()
@@ -207,20 +245,20 @@ if initFinished == True:
 
                 set_mouse_cursor(MOUSE_CURSOR_ARROW)
                 newCursor = MOUSE_CURSOR_ARROW
-                enableDebug = not enableDebug
-                print("[INFO:MAIN] >> Debugging is now " + ("enabled" if enableDebug == True else "disabled"))
+                Globals.enableDebug = not Globals.enableDebug
+                print("[INFO:MAIN] >> Debugging is now " + ("enabled" if Globals.enableDebug == True else "disabled"))
 
             # Toggle physics debug drawing
             if is_key_pressed(KEY_P):
                 Physics.physicsDebugDraw = not Physics.physicsDebugDraw
 
             # Debug window handling
-            if enableDebug == True:
+            if Globals.enableDebug == True:
                 leftPressed = is_mouse_button_pressed(MOUSE_BUTTON_LEFT)
                 rightPressed = is_mouse_button_pressed(MOUSE_BUTTON_RIGHT)
                 leftReleased = is_mouse_button_released(MOUSE_BUTTON_LEFT)
-                isHoveringTitlebar = IsPointInsideRect(mousePos, debugWindowPos.x, debugWindowPos.y, DEBUG_WINDOW_SIZE[0], 20)
-                hoveringDebugCloseButton = IsPointInsideRect(mousePos, debugWindowPos.x + DEBUG_WINDOW_CLOSE_X_POS, debugWindowPos.y, 20, 20)
+                isHoveringTitlebar = Globals.IsPointInsideRect(mousePos, debugWindowPos.x, debugWindowPos.y, DEBUG_WINDOW_SIZE[0], 20)
+                hoveringDebugCloseButton = Globals.IsPointInsideRect(mousePos, debugWindowPos.x + DEBUG_WINDOW_CLOSE_X_POS, debugWindowPos.y, 20, 20)
 
                 # Handle window dragging
                 if leftPressed == True:
@@ -249,7 +287,7 @@ if initFinished == True:
                     hoveringDebugCloseButton = False
                     isHoveringTitlebar = False
                     draggingWindow = False
-                    enableDebug = False
+                    Globals.enableDebug = False
 
                 # Set the cursor type
                 if draggingWindow == True:
@@ -272,8 +310,9 @@ if initFinished == True:
             # Update the music streams so they keep playing
             AssetManager.UpdateMusicStreams()
 
-            # Handle player movement
-            Player.movement()
+            # Handle player movement and health
+            Player.movement(Globals.deltaTime)
+            Player.health()
 
             # Start the frame
             begin_drawing()
@@ -282,46 +321,86 @@ if initFinished == True:
 
 
             # === GRAPHICS ===
+            # SCREEN SPACE
             # Draw the stars
             for star in stars:
-                draw_poly(star[0], 3, star[1], star[2], STAR_COLOR)
+                starSideCount = 3
+                starTwinkle = random.randint(1, 250)
 
-            # === USER INTERFACE ===
-            # NOTE: UI elements should be drawn last so they always draw on top
+                if starTwinkle > 90:
+                    starSideCount = 4
+
+                elif starTwinkle == 5:
+                    continue
+
+                draw_poly(star[0], starSideCount, star[1], star[2], STAR_COLOR)
+
+            # WORLD SPACE
+            begin_mode_2d(camera)
+
+            # Draw the player
+            #draw_circle_v(Player.player_position, 50, WHITE)
 
             # Draw physics bodies if physics debugging is enabled
             if Physics.physicsDebugDraw == True:
                 Physics.DrawBodies()
 
+            end_mode_2d()
+
+
+
+            # === USER INTERFACE ===
+            # NOTE: UI elements should be drawn last so they always draw on top
+
+            # Draw the lives and scores
+            for life in range(Globals.livesLeft):
+                draw_texture_ex(heartSprites[0], Vector2((32 * life) - 12, -12), 0.0, 2.0, WHITE)
+
+            for life in range(max(Globals.LIFE_COUNT - Globals.livesLeft, 0)):
+                endOfHealthbar = 32 * (Globals.LIFE_COUNT - 1)
+                lifeToPixel = (32 * life) + 12
+                draw_texture_ex(heartSprites[1], Vector2(endOfHealthbar - lifeToPixel, -12), 0.0, 2.0, WHITE)
+
+            if Globals.livesLeft > 0:
+                draw_text(f"SCORE: {Globals.score}", 10, 42, 20, DARKPURPLE)
+                draw_text(f"HI: {Globals.highScore}", 10, 62, 20, DARKPURPLE)
+                draw_text(f"SCORE: {Globals.score}", 8, 40, 20, MAGENTA)
+                draw_text(f"HI: {Globals.highScore}", 8, 60, 20, MAGENTA)
+
+            # Draw a full-window black rectangle when the player dies
+            else:
+                gameOverTextLen = measure_text("<=== GAME OVER ===>", 40)
+                draw_text("<=== GAME OVER ===>", (WINDOW_WIDTH // 2) - (gameOverTextLen // 2) + 2, 72, 40, Color(128, 0, 0, 255))
+                draw_text("<=== GAME OVER ===>", (WINDOW_WIDTH // 2) - (gameOverTextLen // 2), 70, 40, RED)
+                draw_text(f"{Globals.score} POINTS SCORED", (WINDOW_WIDTH // 2) - (measure_text(f"{Globals.score} POINTS SCORED", 20) // 2), 110, 20, MAGENTA)
+
+                if Globals.score >= Globals.highScore:
+                    draw_text("!! NEW HIGH SCORE !!", (WINDOW_WIDTH // 2) - (measure_text("!! NEW HIGH SCORE !!", 20) // 2), 130, 20, MAGENTA)
+
+                else:
+                    draw_text(f"HI SCORE IS {Globals.highScore}", (WINDOW_WIDTH // 2) - (measure_text(f"HI SCORE IS {Globals.highScore}", 20) // 2), 130, 20, MAGENTA)
+
             # Draw debugging statistics if debugging is enabled
-            if enableDebug == True:
+            if Globals.enableDebug == True:
                 # Draw the debug data in the window
                 if debugContentsHidden == False:
                     draw_rectangle_lines(int(debugWindowPos.x), int(debugWindowPos.y), DEBUG_WINDOW_SIZE[0], DEBUG_WINDOW_SIZE[1], GRAY)
                     draw_rectangle(int(debugWindowPos.x), int(debugWindowPos.y) + 20, DEBUG_WINDOW_SIZE[0] - 1, DEBUG_WINDOW_SIZE[1] - 21, DEBUG_WINDOW_BG_COLOR)
                     draw_text("=== PERFORMANCE & METRICS ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 22, 10, RAYWHITE)
                     draw_text(f"Uptime: {int(uptime) // 3600:02d}:{(int(uptime) // 60) % 60:02d}:{int(uptime % 60):02d}:{int(uptime * 100) % 100:02d}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 32, 10, RAYWHITE)
-                    draw_text(f"Frame delta: {deltaTime*1000:.4f}ms", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 42, 10, RAYWHITE)
-                    draw_text(f"Frames drawn: {frameCount}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 52, 10, RAYWHITE)
-                    draw_text(f"Framerate: {FPS}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 62, 10, RAYWHITE)
+                    draw_text(f"Frame delta: {Globals.deltaTime*1000:.4f}ms", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 42, 10, RAYWHITE)
+                    draw_text(f"Frames drawn: {Globals.frameCount}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 52, 10, RAYWHITE)
+                    draw_text(f"Framerate: {Globals.FPS}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 62, 10, RAYWHITE)
                     draw_text(f"CPU usage: {cpuUsage:.2f}%", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 72, 10, RAYWHITE)
                     draw_text(f"MEM usage: {memUsageKB} KB ({memUsageKB / 1024:.2f} MB)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 82, 10, RAYWHITE)
                     draw_text("=== WORLD & PHYSICS ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 102, 10, RAYWHITE)
                     draw_text(f"Physics debug draw: {'ON' if Physics.physicsDebugDraw == True else 'OFF'}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 112, 10, RAYWHITE)
                     draw_text(f"Physics simulation time: {Physics.physicsSimTimeMS:.3f}ms", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 122, 10, RAYWHITE)
-                    draw_text(f"Player position: ({Player.player_position.x:.3f}, {Player.player_position.y:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
-                    draw_text(f"Physics bodies in scene: {Physics.GetPhysBodiesInWorld()}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
-                    draw_text(f"Entities in scene: {len(entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
-                    draw_text(f"Tiles in scene: {len(tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 162, 10, RAYWHITE)
-                    draw_text("=== SYSTEM ===", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 182, 10, RAYWHITE)
-                    draw_text(f"Operating system: {operatingSystemName}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 192, 10, RAYWHITE)
-                    draw_text(f"Raylib version: {RAYLIB_VERSION_MAJOR}.{RAYLIB_VERSION_MINOR}.{RAYLIB_VERSION_PATCH}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 202, 10, RAYWHITE)
-
-                    if oglVersion > 0 and oglVersion < 7:
-                        draw_text(f"OpenGL version: {GL_VERSION_MAP.get(oglVersion)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 212, 10, RAYWHITE)
-
-                    else:
-                        draw_text(f"OpenGL version: {oglVersion} (undefined by RlGl)", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 212, 10, RAYWHITE)
+                    draw_text(f"Player position: ({Player.playerBody.position.x:.3f}, {Player.playerBody.position.y:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 132, 10, RAYWHITE)
+                    draw_text(f"Player velocity: ({Player.playerBody.velocity.x:.3f}, {Player.playerBody.velocity.y:.3f})", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 142, 10, RAYWHITE)
+                    draw_text(f"Physics bodies in scene: {Physics.GetPhysBodiesInWorld()}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 152, 10, RAYWHITE)
+                    draw_text(f"Entities in scene: {len(entities)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 162, 10, RAYWHITE)
+                    draw_text(f"Tiles in scene: {len(tiles)}", int(debugWindowPos.x) + 2, int(debugWindowPos.y) + 172, 10, RAYWHITE)
 
                 # Draw the debug window's titlebar
                 draw_rectangle_lines(int(debugWindowPos.x), int(debugWindowPos.y), DEBUG_WINDOW_SIZE[0], 20, LIGHTGRAY)
@@ -331,60 +410,80 @@ if initFinished == True:
                 draw_text("X", int(debugWindowPos.x) + DEBUG_WINDOW_CLOSE_X_POS + 4, int(debugWindowPos.y) + 4, 13, RAYWHITE)
                 draw_text("Debug" if debugContentsHidden == False else "Debug (hidden)", int(debugWindowPos.x) + 8, int(debugWindowPos.y) + 3, 15, LIGHTGRAY)
 
-            # Draw the lives and scores
-            #draw_rectangle(0, 0, max(136, measure_text(f"SCORE: {score}", 20) + 16), 86, DEBUG_WINDOW_BG_COLOR)
-
-            for life in range(livesLeft):
-                draw_texture_ex(heartSprites[0], Vector2((32 * life) - 12, -12), 0.0, 2.0, WHITE)
-
-            for life in range(LIFE_COUNT - livesLeft):
-                endOfHealthbar = 32 * (LIFE_COUNT - 1)
-                lifeToPixel = (32 * life) + 12
-                draw_texture_ex(heartSprites[1], Vector2(endOfHealthbar - lifeToPixel, -12), 0.0, 2.0, WHITE)
-
-            draw_text(f"SCORE: {score}", 10, 42, 20, DARKPURPLE)
-            draw_text(f"HI: {highScore}", 10, 62, 20, DARKPURPLE)
-            draw_text(f"SCORE: {score}", 8, 40, 20, MAGENTA)
-            draw_text(f"HI: {highScore}", 8, 60, 20, MAGENTA)
-
             # End the frame
             end_drawing()
 
+
+
+            # === STATE UPDATES ===
+            # Move the world left and right based on the player position
+            px = Player.playerBody.position.x
+            SCROLL_TRIGGERS = (100, Globals.WINDOW_WIDTH // 2)  # screen-space threshold from the center
+
+            if px > camera.target.x + SCROLL_TRIGGERS[1]:
+                camera.target.x = px - SCROLL_TRIGGERS[1]
+
+            if camera.target.x > 0 and px < camera.target.x + SCROLL_TRIGGERS[0]:
+                camera.target.x = px - SCROLL_TRIGGERS[0]
+
+            camera.target.x = max(camera.target.x, 0)
+
+            # Spawn new platforms when needed
+            while nextPlatformCreateX < Player.playerBody.position.x + PLATFORM_SPAWN_AHEAD:
+                platformHeight = random.randint(10, 50)
+                platformWidth = random.randint(80, 750)
+                nextPlatformCreateX += (lastPlatformWidth // 2) + random.randint(100, 150) + (platformWidth // 2)
+
+                Physics.CreatePhysicsBody(
+                    nextPlatformCreateX,
+                    platformHeight // 2,
+                    platformWidth,
+                    platformHeight,
+                    Physics.MaterialTypes.CONCRETE_DRY,
+                    staticBody=True,
+                    collisionType=Physics.CollisionLayers.GROUND.value
+                )
+
+                lastPlatformWidth = platformWidth
+
             # Update the frame count, delta time, game uptime, and FPS values
-            frameCount += 1
-            deltaTime = get_frame_time()
-            uptime += deltaTime
-            FPS = get_fps()
+            Globals.frameCount += 1
+            Globals.deltaTime = get_frame_time()
+            Globals.FPS = get_fps()
+            uptime += Globals.deltaTime
 
             # Move stars and check if any of them are out of bounds
             if uptime >= lastStarUpdate:
-                lastStarUpdate = uptime + (STAR_UPDATE_INTERVAL_MS / 1000)
+                lastStarUpdate = uptime + (Globals.STAR_UPDATE_INTERVAL_MS / 1000)
 
                 for star in stars:
                     star[0].x -= 1
+                    star[2] += random.uniform(-1, 2)
 
                     if star[0].x < -8:
-                        star[0].x = WINDOW_WIDTH + random.randint(8, 64)
-                        star[0].y = random.randint(0, WINDOW_HEIGHT)
-                        star[1] = random.uniform(STAR_SCALE_RANGE[0], STAR_SCALE_RANGE[1])
+                        star[0].x = Globals.WINDOW_WIDTH + random.randint(8, 64)
+                        star[0].y = random.randint(0, Globals.WINDOW_HEIGHT)
+                        star[1] = random.uniform(Globals.STAR_SCALE_RANGE[0], Globals.STAR_SCALE_RANGE[1])
                         star[2] = random.uniform(0, 360)
 
             # Update the score and high score when ready
             if uptime >= lastScoreUpdate:
-                lastScoreUpdate = uptime + (SCORE_INCREASE_INTERVAL_MS / 1000)
-                score += 1
+                lastScoreUpdate = uptime + (Globals.SCORE_INCREASE_INTERVAL_MS / 1000)
 
-                if score > highScore:
-                    highScore = score
+                if Globals.livesLeft > 0:
+                    Globals.score += 1
+
+                    if Globals.score > Globals.highScore:
+                        Globals.highScore = Globals.score
 
             # Update the title when ready
             if uptime >= lastTitleUpdate:
-                lastTitleUpdate = uptime + (TITLE_UPDATE_INTERVAL_MS / 1000)
-                set_window_title(f"{GAME_NAME} | {WINDOW_WIDTH}x{WINDOW_HEIGHT} | {FPS} FPS")
+                lastTitleUpdate = uptime + (Globals.TITLE_UPDATE_INTERVAL_MS / 1000)
+                set_window_title(f"{Globals.GAME_NAME} | {Globals.WINDOW_WIDTH}x{Globals.WINDOW_HEIGHT} | {Globals.FPS} FPS")
 
             # Get this program's resource usage when ready, and debugging is enabled
-            if enableDebug == True and uptime >= lastResourceUsageUpdate:
-                lastResourceUsageUpdate = uptime + (RESOURCE_USAGE_UPDATE_INTERVAL_MS / 1000)
+            if Globals.enableDebug == True and uptime >= lastResourceUsageUpdate:
+                lastResourceUsageUpdate = uptime + (Globals.RESOURCE_USAGE_UPDATE_INTERVAL_MS / 1000)
                 cpuUsage = currentProcess.cpu_percent(interval=None) / psutil.cpu_count()
                 memUsageKB = currentProcess.memory_info().rss / 1024
 
@@ -411,13 +510,13 @@ if windowInitialized == True:
 
 # Write the user's high score to a file
 if initFinished == True:
-    print(f"[INFO:MAIN] >> Saving game stats to \"{STATS_FILE}\"...")
+    print(f"[INFO:MAIN] >> Saving game stats to \"{Globals.STATS_FILE}\"...")
     try:
-        with open(STATS_FILE, 'w') as StatsFile:
-            StatsFile.write(f"HI={highScore}\n")
+        with open(Globals.STATS_FILE, 'w') as StatsFile:
+            StatsFile.write(f"HI={Globals.highScore}\n")
 
     except Exception as EX:
-        print(f"[ERROR:MAIN] >> Failed to write to \"{STATS_FILE}\": {EX}")
+        print(f"[ERROR:MAIN] >> Failed to write to \"{Globals.STATS_FILE}\": {EX}")
         traceback.print_exc()
         MessageBox.showMessage(MessageBox.MessageTypes.ERROR, "Failed to save high score", f"An error occurred while saving your high score, see the console for more information.\n\n{EX}")
 

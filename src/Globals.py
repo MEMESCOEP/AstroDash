@@ -16,7 +16,7 @@ TITLE_UPDATE_INTERVAL_MS = 500
 STAR_UPDATE_INTERVAL_MS = 10
 WINDOW_HEIGHT = 600
 WINDOW_WIDTH = 800
-LIFE_COUNT = 4
+LIFE_COUNT = 5
 STAR_COUNT = 115
 fullscreenMode = False
 enableDebug = False
@@ -30,3 +30,6 @@ FPS = 0
 
 def IsPointInsideRect(pointVec2, x, y, width, height):
     return x <= pointVec2.x <= x + width and y <= pointVec2.y <= y + height
+
+def Lerp(a, b, t):
+    return a + (b - a) * t
