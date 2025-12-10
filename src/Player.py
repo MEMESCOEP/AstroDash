@@ -1,3 +1,5 @@
+from pyray import *
+import AnimatedSprite
 import Globals
 import Physics
 import pymunk
@@ -14,6 +16,10 @@ playerBody = None
 wallRight = False
 wallLeft = False
 grounded = False
+walkingAnimation = None
+idleAnimation = None
+lastDirection = 0
+renderScale = 0.3
 
 def HandleGroundCollisions(arbiter, space, data):
     global grounded
@@ -51,8 +57,8 @@ def EndWallCollisions(arbiter, space, data):
 
     return True
 
-def init():
-    global playerBody
+def Init():
+    global playerBody, walkingAnimation, idleAnimation
 
     # Create the player body and the wall & ground sensors
     playerBody = Physics.CreatePhysicsBody(PLAYER_SPAWN_POS[0], PLAYER_SPAWN_POS[1], PLAYER_WIDTH, PLAYER_HEIGHT, Physics.MaterialTypes.CONCRETE_DRY, instantAdd=True)
@@ -100,7 +106,14 @@ def init():
     groundHandler.separate = EndGroundCollisions
     wallHandler.separate = EndWallCollisions
 
-def movement(delta):
+    # Load the animations
+    walkingAnimation = AnimatedSprite.AnimatedSprite()
+    idleAnimation = AnimatedSprite.AnimatedSprite()
+    walkingAnimation.AddSprites("Assets/Animations/PlayerWalk")
+    idleAnimation.AddSprites("Assets/Animations/PlayerIdle")
+
+def Movement(delta):
+    global lastDirection
     vx, vy = playerBody.velocity
 
     if Globals.livesLeft > 0:
@@ -109,9 +122,11 @@ def movement(delta):
 
         if moveRight == True and moveLeft == False:
             vx = moveSpeed
+            lastDirection = 1
 
         elif moveRight == False and moveLeft == True:
             vx = -moveSpeed
+            lastDirection = -1
 
         else:
             vx = Globals.Lerp(vx, 0, 10 * delta)
@@ -125,9 +140,31 @@ def movement(delta):
     playerBody.velocity = (vx, vy)
     playerBody.moment = float('inf') # Stops body rotation
 
-def health():
+def Health():
     if playerBody.position.y < -PLAYER_HEIGHT:
         Globals.livesLeft = 0
         playerBody.velocity = (0.0, 0.0)
 
-# The player object is currently set as a circle with the position of player_position and a radius of 50, just to be clear
+def Draw(deltaTime):
+    drawPosition = Vector2(playerBody.position.x, Globals.WINDOW_HEIGHT - playerBody.position.y)
+    texture = walkingAnimation.GetNextSprite(deltaTime) if abs(playerBody.velocity.x) > 25 else idleAnimation.GetNextSprite(deltaTime)
+
+    # source rectangle (full texture)
+    src = Rectangle(0, 0, texture.width, texture.height)
+
+    # destination rectangle
+    destWidth = texture.width * renderScale
+    destHeight = texture.height * renderScale
+    destX = drawPosition.x
+    destY = drawPosition.y
+    dest = Rectangle(destX, destY, destWidth, destHeight)
+
+    # origin (center of rectangle)
+    origin = Vector2(destWidth / 2, destHeight / 2)
+
+    # Flip the sprite if the player is moving left
+    if lastDirection < 0:
+        src.width = -texture.width
+
+    # rotation = 0
+    draw_texture_pro(texture, src, dest, origin, 0.0, WHITE)

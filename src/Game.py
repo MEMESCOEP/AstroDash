@@ -176,7 +176,7 @@ try:
 
     # Create physics bodies
     Physics.CreatePhysicsBody(125, 20, 250, 30, Physics.MaterialTypes.CONCRETE_DRY, staticBody=True, collisionType=Physics.CollisionLayers.GROUND.value)
-    Player.init()
+    Player.Init()
 
     # Read the stats file to get the high score
     if os.path.exists(Globals.STATS_FILE) == True:
@@ -311,8 +311,8 @@ if initFinished == True:
             AssetManager.UpdateMusicStreams()
 
             # Handle player movement and health
-            Player.movement(Globals.deltaTime)
-            Player.health()
+            Player.Movement(Globals.deltaTime)
+            Player.Health()
 
             # Start the frame
             begin_drawing()
@@ -339,7 +339,7 @@ if initFinished == True:
             begin_mode_2d(camera)
 
             # Draw the player
-            #draw_circle_v(Player.player_position, 50, WHITE)
+            Player.Draw(Globals.deltaTime)
 
             # Draw physics bodies if physics debugging is enabled
             if Physics.physicsDebugDraw == True:
