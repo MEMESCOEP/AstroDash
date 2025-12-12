@@ -1,5 +1,6 @@
 from DebugDefinitions import *
 from pyray import *
+from Meteor import Meteor
 import AssetManager
 import MessageBox
 import threading
@@ -28,6 +29,7 @@ newCursor = MOUSE_CURSOR_ARROW
 windowInitialized = False
 audioInitialized = False
 initFinished = False
+gameStarted = False
 lastResourceUsageUpdate = 0
 lastScoreUpdate = 0
 lastTitleUpdate = 0
@@ -38,6 +40,7 @@ PID = 0
 lastPlatformY = 50
 nextPlatformCreateX = 150
 lastPlatformWidth = 0
+nextSpawnCount = 15
 
 # The ANSI escape codes here are to overwrite the text that pyray prints when it loads
 try:
@@ -209,6 +212,11 @@ try:
         starScale = random.uniform(Globals.STAR_SCALE_RANGE[0], Globals.STAR_SCALE_RANGE[1])
         stars.append([starVector, starScale, starAngle])
 
+    print(f"[INFO:MAIN] >> Placing 10 meteor(s)...")
+    for i in range(5):
+        meteor = Meteor(Globals.WINDOW_WIDTH + random.randint(10, 50), random.randint(10, 300), random.randint(100, 200), random.randint(75, 125))
+        entities.append(meteor)
+
     # Configure the camera
     print("[INFO:MAIN] >> Configuring the camera...")
     camera.offset = Vector2(0, 0)
@@ -235,6 +243,9 @@ if initFinished == True:
         while window_should_close() == False:
             # === USER INTERACTION ===
             # Get user input before drawing the frame
+            if is_key_pressed(KEY_ENTER):
+                gameStarted = True
+
             mouseDelta = get_mouse_delta()
             mousePos = get_mouse_position()
 
@@ -311,8 +322,9 @@ if initFinished == True:
             AssetManager.UpdateMusicStreams()
 
             # Handle player movement and health
-            Player.Movement(Globals.deltaTime)
-            Player.Health()
+            if gameStarted == True:
+                Player.Movement(Globals.deltaTime)
+                Player.Health()
 
             # Start the frame
             begin_drawing()
@@ -337,6 +349,10 @@ if initFinished == True:
 
             # WORLD SPACE
             begin_mode_2d(camera)
+
+            # Draw meteors
+            for meteor in entities:
+                meteor.Draw(Globals.deltaTime)
 
             # Draw the player
             Player.Draw(Globals.deltaTime)
@@ -379,6 +395,11 @@ if initFinished == True:
 
                 else:
                     draw_text(f"HI SCORE IS {Globals.highScore}", (WINDOW_WIDTH // 2) - (measure_text(f"HI SCORE IS {Globals.highScore}", 20) // 2), 130, 20, MAGENTA)
+
+            if gameStarted == False:
+                draw_text("<== PRESS ENTER TO PLAY ==>", (WINDOW_WIDTH // 2) - (measure_text("<== PRESS ENTER TO PLAY ==>", 30) // 2), 130, 30, MAGENTA)
+                draw_text("A AND D TO MOVE", (WINDOW_WIDTH // 2) - (measure_text("A AND D TO MOVE", 20) // 2), 170, 20, MAGENTA)
+                draw_text("SPACE TO JUMP", (WINDOW_WIDTH // 2) - (measure_text("SPACE TO JUMP", 20) // 2), 200, 20, MAGENTA)
 
             # Draw debugging statistics if debugging is enabled
             if Globals.enableDebug == True:
@@ -428,6 +449,19 @@ if initFinished == True:
 
             camera.target.x = max(camera.target.x, 0)
 
+            # Move the meteors
+            if gameStarted == True:
+                for meteor in entities:
+                    meteor.Move(Globals.deltaTime, camera.target.x, Player.playerBody.position)
+
+            # Spawn 5 new meteors for every 15 new platforms
+            if Physics.GetPhysBodiesInWorld() >= nextSpawnCount:
+                nextSpawnCount += 15
+
+                for i in range(5):
+                    meteor = Meteor(0, 0, random.randint(100, 200), random.randint(75, 125))
+                    entities.append(meteor)
+
             # Spawn new platforms when needed
             while nextPlatformCreateX < Player.playerBody.position.x + PLATFORM_SPAWN_AHEAD:
                 platformHeight = random.randint(10, 50)
@@ -467,7 +501,7 @@ if initFinished == True:
                         star[2] = random.uniform(0, 360)
 
             # Update the score and high score when ready
-            if uptime >= lastScoreUpdate:
+            if uptime >= lastScoreUpdate and gameStarted == True:
                 lastScoreUpdate = uptime + (Globals.SCORE_INCREASE_INTERVAL_MS / 1000)
 
                 if Globals.livesLeft > 0:

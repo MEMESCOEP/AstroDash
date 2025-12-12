@@ -146,6 +146,9 @@ def Health():
         playerBody.velocity = (0.0, 0.0)
 
 def Draw(deltaTime):
+    if Globals.livesLeft <= 0:
+        return
+
     drawPosition = Vector2(playerBody.position.x, Globals.WINDOW_HEIGHT - playerBody.position.y)
     texture = walkingAnimation.GetNextSprite(deltaTime) if abs(playerBody.velocity.x) > 25 else idleAnimation.GetNextSprite(deltaTime)
 
