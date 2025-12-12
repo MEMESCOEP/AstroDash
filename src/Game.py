@@ -9,6 +9,7 @@ import platform
 import Globals
 import Physics
 import Player
+import pymunk
 import psutil
 import random
 import time
@@ -41,6 +42,7 @@ lastPlatformY = 50
 nextPlatformCreateX = 150
 lastPlatformWidth = 0
 nextSpawnCount = 15
+platformTexture = None
 
 # The ANSI escape codes here are to overwrite the text that pyray prints when it loads
 try:
@@ -203,6 +205,7 @@ try:
     # Load assets
     print("[INFO:MAIN] >> Loading textures...")
     heartSprites = [AssetManager.LoadTexture("Assets/Icons/HeartFull.png"), AssetManager.LoadTexture("Assets/Icons/HeartEmpty.png")]
+    platformTexture = AssetManager.LoadTexture("Assets/Icons/scifi_floortile.jpg")
 
     # Place the stars in the background
     print(f"[INFO:MAIN] >> Placing {Globals.STAR_COUNT} star(s)...")
@@ -360,6 +363,36 @@ if initFinished == True:
             # Draw physics bodies if physics debugging is enabled
             if Physics.physicsDebugDraw == True:
                 Physics.DrawBodies()
+
+            # Draw the platforms
+            for body in Physics.physWorld.bodies[1:]:
+                for shape in body.shapes:
+                    if isinstance(shape, pymunk.Poly):
+
+                        # Get the box size from local (unrotated) vertices
+                        local = shape.get_vertices()
+                        xs = [v.x for v in local]
+                        ys = [v.y for v in local]
+
+                        w = max(xs) - min(xs)
+                        h = max(ys) - min(ys)
+
+                        # Convert pymunk Y to raylib Y coordinates
+                        rx = body.position.x
+                        ry = Globals.WINDOW_HEIGHT - body.position.y
+
+                        # Convert pymunk CCW to raylib CW angles
+                        angle_deg = -(body.angle * 57.2958)
+
+                        # Draw the sprite centered on the body
+                        draw_texture_pro(
+                            platformTexture,
+                            Rectangle(0, 0, platformTexture.width, platformTexture.height),
+                            Rectangle(rx, ry, w, h),
+                            Vector2(w/2, h/2),
+                            angle_deg,
+                            WHITE
+                        )
 
             end_mode_2d()
 
