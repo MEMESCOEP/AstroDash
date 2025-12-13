@@ -43,6 +43,10 @@ nextPlatformCreateX = 150
 lastPlatformWidth = 0
 nextSpawnCount = 15
 platformTexture = None
+prevLifeCount = Globals.livesLeft
+deathSound = None
+jumpSound = None
+hitSound = None
 
 # The ANSI escape codes here are to overwrite the text that pyray prints when it loads
 try:
@@ -207,6 +211,12 @@ try:
     heartSprites = [AssetManager.LoadTexture("Assets/Icons/HeartFull.png"), AssetManager.LoadTexture("Assets/Icons/HeartEmpty.png")]
     platformTexture = AssetManager.LoadTexture("Assets/Icons/scifi_floortile.jpg")
 
+    print("[INFO:MAIN] >> Loading audio...")
+    deathSound = AssetManager.LoadSoundEffect("Assets/Audio/Death.ogg")
+    jumpSound = AssetManager.LoadSoundEffect("Assets/Audio/Jump.ogg")
+    hitSound = AssetManager.LoadSoundEffect("Assets/Audio/Hit.wav")
+    play_music_stream(AssetManager.LoadMusic("Assets/Audio/BG.ogg"))
+
     # Place the stars in the background
     print(f"[INFO:MAIN] >> Placing {Globals.STAR_COUNT} star(s)...")
     for i in range(Globals.STAR_COUNT):
@@ -248,6 +258,9 @@ if initFinished == True:
             # Get user input before drawing the frame
             if is_key_pressed(KEY_ENTER):
                 gameStarted = True
+
+            if gameStarted == True and is_key_pressed(KEY_SPACE) and Globals.livesLeft > 0 and abs(Player.playerBody.velocity.y) < 10.0:
+                play_sound(jumpSound)
 
             mouseDelta = get_mouse_delta()
             mousePos = get_mouse_position()
@@ -368,7 +381,6 @@ if initFinished == True:
             for body in Physics.physWorld.bodies[1:]:
                 for shape in body.shapes:
                     if isinstance(shape, pymunk.Poly):
-
                         # Get the box size from local (unrotated) vertices
                         local = shape.get_vertices()
                         xs = [v.x for v in local]
@@ -519,6 +531,14 @@ if initFinished == True:
             Globals.FPS = get_fps()
             uptime += Globals.deltaTime
 
+            # Play a damage sound when the lives decrease
+            if Globals.livesLeft < prevLifeCount:
+                if Globals.livesLeft <= 0:
+                    play_sound(deathSound)
+
+                else:
+                    play_sound(hitSound)
+
             # Move stars and check if any of them are out of bounds
             if uptime >= lastStarUpdate:
                 lastStarUpdate = uptime + (Globals.STAR_UPDATE_INTERVAL_MS / 1000)
@@ -553,6 +573,8 @@ if initFinished == True:
                 lastResourceUsageUpdate = uptime + (Globals.RESOURCE_USAGE_UPDATE_INTERVAL_MS / 1000)
                 cpuUsage = currentProcess.cpu_percent(interval=None) / psutil.cpu_count()
                 memUsageKB = currentProcess.memory_info().rss / 1024
+
+            prevLifeCount = Globals.livesLeft
 
     except Exception as EX:
         print(f"[ERROR:MAIN] >> Error in window loop: {EX}")

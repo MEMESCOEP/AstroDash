@@ -13,15 +13,16 @@ class Meteor:
         self.animation.AddSprites("Assets/Animations/Meteor")
         self.animation.indexSwitchFreq = 100
         self.leftBoundary = 0
-        self.playerPosition = Vector2(0, 0)
 
     def Move(self, delta, cameraTargetX, playerPosition):
         self.position.x -= self.moveSpeedX * delta
         self.position.y += self.moveSpeedY * delta
-        self.playerPosition = playerPosition
+
+        if Globals.livesLeft <= 0:
+                return
 
         isInXRange = self.position.x < playerPosition.x + 24 and self.position.x > playerPosition.x - 24
-        isInYRange = self.position.y < (Globals.WINDOW_HEIGHT - self.playerPosition.y + 24) and self.position.y > (Globals.WINDOW_HEIGHT - self.playerPosition.y - 24)
+        isInYRange = self.position.y < (Globals.WINDOW_HEIGHT - playerPosition.y + 24) and self.position.y > (Globals.WINDOW_HEIGHT - playerPosition.y - 24)
         hitPlayer = isInXRange and isInYRange
 
         if self.position.y > Globals.WINDOW_HEIGHT + 16 or hitPlayer:
